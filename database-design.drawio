@@ -1,0 +1,71 @@
+<mxfile host="app.diagrams.net" modified="2026-05-04T00:00:00.000Z" agent="newbuild" version="24.0.0">
+  <diagram name="invest-db" id="invest-db">
+    <mxGraphModel dx="1422" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1800" pageHeight="1200" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- User -->
+        <mxCell id="user" value="User (users)&#10;----&#10;_id: ObjectId&#10;email: EmailStr [unique]&#10;username: str [unique]&#10;hashed_password: Optional[str]&#10;display_name, phone: Optional&#10;google_sub: Optional [sparse unique]&#10;email_verified: bool = True&#10;is_active: bool = True&#10;created_at: datetime" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;align=left;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="280" height="200" as="geometry" />
+        </mxCell>
+
+        <!-- PasswordResetToken -->
+        <mxCell id="prt" value="PasswordResetToken&#10;----&#10;token, user_id, expires_at,&#10;used_at, created_at" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;align=left;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="360" y="40" width="220" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- EmailVerificationToken -->
+        <mxCell id="evt" value="EmailVerificationToken&#10;----&#10;token, user_id, expires_at,&#10;used_at, created_at" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;align=left;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="620" y="40" width="220" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Stock -->
+        <mxCell id="stock" value="Stock (stocks)&#10;----&#10;_id: ObjectId&#10;user_id: str&#10;ticker: str&#10;name: str&#10;sector, exchange: Optional&#10;related: list[RelatedStock]&#10;  └ ticker, name?, relation?&#10;archived: bool = False&#10;pinned: bool = False&#10;sort_order: int = 0&#10;created_at, updated_at: datetime&#10;-- (user_id, ticker) unique --" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;align=left;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="40" y="300" width="300" height="240" as="geometry" />
+        </mxCell>
+
+        <!-- UserThesis -->
+        <mxCell id="uthesis" value="UserThesis&#10;----&#10;stock_id, user_id&#10;content_md: str&#10;created_at, updated_at&#10;-- (stock_id, user_id) unique --" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;align=left;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="380" y="300" width="240" height="120" as="geometry" />
+        </mxCell>
+
+        <!-- AiThesis -->
+        <mxCell id="aithesis" value="AiThesis&#10;----&#10;stock_id, content_md&#10;model: Optional&#10;version: int&#10;generated_at: datetime&#10;-- versioned; latest = current --" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;align=left;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="660" y="300" width="240" height="140" as="geometry" />
+        </mxCell>
+
+        <!-- NewsItem -->
+        <mxCell id="news" value="NewsItem&#10;----&#10;stock_id, headline, source, url&#10;summary: Optional&#10;published_at: Optional&#10;tag: 'recent' | 'long_term'&#10;sentiment: bullish|bearish|neutral|mixed&#10;relevance_score: Optional[float]&#10;is_read: bool = False&#10;ingested_at: datetime&#10;-- (stock_id, url) unique --" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;align=left;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="940" y="300" width="280" height="200" as="geometry" />
+        </mxCell>
+
+        <!-- PricePoint -->
+        <mxCell id="pp" value="PricePoint (daily OHLCV)&#10;----&#10;stock_id&#10;date: date&#10;open, close, high, low: float&#10;volume: int&#10;captured_at: datetime&#10;-- (stock_id, date) unique --" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;align=left;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="380" y="580" width="240" height="160" as="geometry" />
+        </mxCell>
+
+        <!-- StockSnapshot -->
+        <mxCell id="snap" value="StockSnapshot (current vitals)&#10;----&#10;stock_id, captured_at&#10;price, market_cap&#10;pe_ratio, eps, dividend_yield, beta&#10;high_52w, low_52w&#10;high_all_time, low_all_time&#10;avg_volume_30d&#10;shares_outstanding&#10;-- all metrics Optional --" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;align=left;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="660" y="580" width="280" height="180" as="geometry" />
+        </mxCell>
+
+        <!-- YouTubeLink -->
+        <mxCell id="ytlink" value="YouTubeLink&#10;----&#10;stock_id, title, url&#10;channel, notes: Optional&#10;duration_seconds: Optional[int]&#10;watched: bool = False&#10;published_at: Optional&#10;curated_at: datetime&#10;-- (stock_id, url) unique --" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;align=left;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="980" y="580" width="240" height="180" as="geometry" />
+        </mxCell>
+
+        <!-- Edges -->
+        <mxCell id="e1" style="endArrow=open;html=1;" edge="1" parent="1" source="user" target="prt"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e2" style="endArrow=open;html=1;" edge="1" parent="1" source="user" target="evt"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e3" style="endArrow=open;html=1;" edge="1" parent="1" source="user" target="stock"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e4" style="endArrow=open;html=1;" edge="1" parent="1" source="stock" target="uthesis"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e5" style="endArrow=open;html=1;" edge="1" parent="1" source="stock" target="aithesis"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e6" style="endArrow=open;html=1;" edge="1" parent="1" source="stock" target="news"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e7" style="endArrow=open;html=1;" edge="1" parent="1" source="stock" target="pp"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e8" style="endArrow=open;html=1;" edge="1" parent="1" source="stock" target="snap"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e9" style="endArrow=open;html=1;" edge="1" parent="1" source="stock" target="ytlink"><mxGeometry relative="1" as="geometry" /></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

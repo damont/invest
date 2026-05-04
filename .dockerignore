@@ -1,0 +1,13 @@
+.git
+.gitignore
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+tests/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+.env
+*.log
+*.drawio

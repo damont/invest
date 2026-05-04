@@ -1,0 +1,38 @@
+services:
+  api:
+    build:
+      context: .
+      target: backend
+    container_name: invest-api
+    expose:
+      - "8024"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      MONGODB_URL: mongodb://host.docker.internal:27017
+      MONGODB_DB_NAME: ${MONGODB_DB_NAME:-invest}
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      JWT_ALGORITHM: HS256
+      JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES:-10080}
+      SMTP_EMAIL: ${SMTP_EMAIL:-}
+      SMTP_APP_PASSWORD: ${SMTP_APP_PASSWORD:-}
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      PASSWORD_RESET_EXPIRE_MINUTES: ${PASSWORD_RESET_EXPIRE_MINUTES:-60}
+      EMAIL_VERIFICATION_EXPIRE_MINUTES: ${EMAIL_VERIFICATION_EXPIRE_MINUTES:-1440}
+      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:8100}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      target: frontend
+      args:
+        VITE_GOOGLE_CLIENT_ID: ${VITE_GOOGLE_CLIENT_ID:-}
+    container_name: invest-frontend
+    ports:
+      - "8100:80"
+    depends_on:
+      - api
+    restart: unless-stopped
