@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     email_verification_expire_minutes: int = 60 * 24  # 24 hours
 
     # Frontend base URL (used in email links — password reset, email verification)
-    frontend_base_url: str = "https://localhost:8100"
+    frontend_base_url: str = "https://localhost:8101"
 
     # Google OAuth (single Client ID for backend audience verification + frontend button)
     google_client_id: Optional[str] = None
