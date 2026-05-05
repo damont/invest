@@ -272,3 +272,191 @@ async def test_delete_stock_cascades(authenticated_client):
     assert await PricePoint.find(PricePoint.stock_id == sid).count() == 0
     assert await StockSnapshot.find(StockSnapshot.stock_id == sid).count() == 0
     assert await YouTubeLink.find(YouTubeLink.stock_id == sid).count() == 0
+
+
+# ---------- thesis recent_change ----------
+
+async def test_ai_thesis_recent_change_carries_over(authenticated_client):
+    s = await _create_stock(authenticated_client, ticker="NVDA")
+    sid = s["id"]
+    # v1 with a recent_change set explicitly
+    r1 = await authenticated_client.post(
+        f"/api/stocks/{sid}/ai-thesis",
+        json={"content_md": "v1 body", "recent_change": "Initial conviction set"},
+    )
+    assert r1.status_code == 201
+    assert r1.json()["recent_change"] == "Initial conviction set"
+    assert r1.json()["recent_change_at"] is not None
+
+    # v2 without recent_change in payload — should carry over from v1
+    r2 = await authenticated_client.post(
+        f"/api/stocks/{sid}/ai-thesis", json={"content_md": "v2 body"}
+    )
+    assert r2.json()["version"] == 2
+    assert r2.json()["recent_change"] == "Initial conviction set"
+    # Mongo truncates to ms — compare on the second.
+    assert r2.json()["recent_change_at"][:19] == r1.json()["recent_change_at"][:19]
+
+
+async def test_ai_thesis_recent_change_explicit_overrides_carryover(authenticated_client):
+    s = await _create_stock(authenticated_client, ticker="NVDA")
+    sid = s["id"]
+    await authenticated_client.post(
+        f"/api/stocks/{sid}/ai-thesis",
+        json={"content_md": "v1", "recent_change": "old"},
+    )
+    r2 = await authenticated_client.post(
+        f"/api/stocks/{sid}/ai-thesis",
+        json={"content_md": "v2", "recent_change": "new note"},
+    )
+    assert r2.json()["recent_change"] == "new note"
+
+
+async def test_ai_thesis_recent_change_explicit_null_clears(authenticated_client):
+    s = await _create_stock(authenticated_client, ticker="NVDA")
+    sid = s["id"]
+    await authenticated_client.post(
+        f"/api/stocks/{sid}/ai-thesis",
+        json={"content_md": "v1", "recent_change": "old"},
+    )
+    r2 = await authenticated_client.post(
+        f"/api/stocks/{sid}/ai-thesis",
+        json={"content_md": "v2", "recent_change": None},
+    )
+    assert r2.json()["recent_change"] is None
+    assert r2.json()["recent_change_at"] is None
+
+
+async def test_patch_recent_change_endpoint(authenticated_client):
+    s = await _create_stock(authenticated_client, ticker="NVDA")
+    sid = s["id"]
+    await authenticated_client.post(
+        f"/api/stocks/{sid}/ai-thesis", json={"content_md": "v1"}
+    )
+    res = await authenticated_client.patch(
+        f"/api/stocks/{sid}/ai-thesis/recent-change",
+        json={"recent_change": "Upgraded after Q1 beat"},
+    )
+    assert res.status_code == 200
+    assert res.json()["recent_change"] == "Upgraded after Q1 beat"
+    assert res.json()["recent_change_at"] is not None
+    assert res.json()["version"] == 1  # still latest
+
+
+async def test_patch_recent_change_404_when_no_thesis(authenticated_client):
+    s = await _create_stock(authenticated_client, ticker="NVDA")
+    sid = s["id"]
+    res = await authenticated_client.patch(
+        f"/api/stocks/{sid}/ai-thesis/recent-change",
+        json={"recent_change": "x"},
+    )
+    assert res.status_code == 404
+
+
+async def test_patch_recent_change_other_user_404(authenticated_client, auth_header_for):
+    s = await _create_stock(authenticated_client, ticker="NVDA")
+    sid = s["id"]
+    await authenticated_client.post(
+        f"/api/stocks/{sid}/ai-thesis", json={"content_md": "v1"}
+    )
+    other_headers = await auth_header_for("other@example.com")
+    res = await authenticated_client.patch(
+        f"/api/stocks/{sid}/ai-thesis/recent-change",
+        json={"recent_change": "x"},
+        headers=other_headers,
+    )
+    assert res.status_code == 404
+
+
+# ---------- dashboard ----------
+
+async def test_dashboard_empty(authenticated_client):
+    res = await authenticated_client.get("/api/stocks/dashboard")
+    assert res.status_code == 200
+    assert res.json() == {"stocks": []}
+
+
+async def test_dashboard_requires_auth(client):
+    res = await client.get("/api/stocks/dashboard")
+    assert res.status_code in (401, 403)
+
+
+async def test_dashboard_aggregates_stock_data(authenticated_client):
+    s = await _create_stock(authenticated_client, ticker="NVDA")
+    sid = s["id"]
+
+    # Snapshot
+    await authenticated_client.post(
+        f"/api/stocks/{sid}/snapshot",
+        json={"price": 100.0, "market_cap": 2.5e12, "pe_ratio": 50.0, "avg_volume_30d": 4e8},
+    )
+    # Two prices to compute % change
+    await authenticated_client.post(
+        f"/api/stocks/{sid}/prices",
+        json={"date": "2026-05-04", "open": 95, "close": 100, "high": 101, "low": 94, "volume": 1},
+    )
+    await authenticated_client.post(
+        f"/api/stocks/{sid}/prices",
+        json={"date": "2026-05-05", "open": 100, "close": 105, "high": 106, "low": 99, "volume": 1},
+    )
+    # Thesis with a recent_change
+    await authenticated_client.post(
+        f"/api/stocks/{sid}/ai-thesis",
+        json={"content_md": "thesis", "recent_change": "Upgraded"},
+    )
+    # News + youtube
+    await authenticated_client.post(
+        f"/api/stocks/{sid}/news",
+        json={"headline": "Beat earnings", "source": "Reuters", "url": "https://r/1"},
+    )
+    await authenticated_client.post(
+        f"/api/stocks/{sid}/youtube",
+        json={"title": "Why NVDA", "url": "https://yt/abc", "channel": "Foo"},
+    )
+
+    res = await authenticated_client.get("/api/stocks/dashboard")
+    assert res.status_code == 200
+    payload = res.json()
+    assert len(payload["stocks"]) == 1
+    item = payload["stocks"][0]
+    assert item["stock"]["ticker"] == "NVDA"
+    assert item["snapshot"]["price"] == 100.0
+    assert item["spark"] == [100.0, 105.0]
+    assert item["change_pct"] == 5.0
+    assert item["thesis"]["recent_change"] == "Upgraded"
+    assert item["latest_news"]["headline"] == "Beat earnings"
+    assert item["latest_video"]["title"] == "Why NVDA"
+
+
+async def test_dashboard_excludes_archived_and_other_users(authenticated_client, auth_header_for):
+    # Owned, archived (should not appear)
+    s_arch = await _create_stock(authenticated_client, ticker="ARCH")
+    await authenticated_client.patch(
+        f"/api/stocks/{s_arch['id']}", json={"archived": True}
+    )
+    # Owned, active
+    await _create_stock(authenticated_client, ticker="ACT")
+    # Other user's stock (should not appear)
+    other_headers = await auth_header_for("other@example.com")
+    await authenticated_client.post(
+        "/api/stocks", json={"ticker": "OTHR", "name": "Other Inc"}, headers=other_headers
+    )
+
+    res = await authenticated_client.get("/api/stocks/dashboard")
+    tickers = [item["stock"]["ticker"] for item in res.json()["stocks"]]
+    assert tickers == ["ACT"]
+
+
+async def test_dashboard_skips_watched_youtube(authenticated_client):
+    s = await _create_stock(authenticated_client, ticker="NVDA")
+    sid = s["id"]
+    yt = await authenticated_client.post(
+        f"/api/stocks/{sid}/youtube",
+        json={"title": "Old", "url": "https://yt/old"},
+    )
+    await authenticated_client.patch(
+        f"/api/stocks/{sid}/youtube/{yt.json()['id']}", json={"watched": True}
+    )
+    res = await authenticated_client.get("/api/stocks/dashboard")
+    item = res.json()["stocks"][0]
+    assert item["latest_video"] is None

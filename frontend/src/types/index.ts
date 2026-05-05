@@ -94,3 +94,50 @@ export interface YouTubeLink {
   published_at: string | null
   curated_at: string
 }
+
+// ----- Dashboard aggregation -----
+
+export interface DashboardSnapshot {
+  price: number | null
+  market_cap: number | null
+  pe_ratio: number | null
+  avg_volume_30d: number | null
+  captured_at: string
+}
+
+export interface DashboardThesis {
+  content_md: string
+  version: number
+  generated_at: string
+  recent_change: string | null
+  recent_change_at: string | null
+}
+
+export interface DashboardNews {
+  headline: string
+  url: string
+  published_at: string | null
+}
+
+export interface DashboardYouTube {
+  title: string
+  url: string
+  channel: string | null
+  duration_seconds: number | null
+  published_at: string | null
+  curated_at: string
+}
+
+export interface DashboardStock {
+  stock: Stock
+  snapshot: DashboardSnapshot | null
+  spark: number[]
+  change_pct: number | null
+  thesis: DashboardThesis | null
+  latest_news: DashboardNews | null
+  latest_video: DashboardYouTube | null
+}
+
+export interface DashboardResponse {
+  stocks: DashboardStock[]
+}

@@ -7,60 +7,50 @@ interface Props {
 
 export default function AppLayout({ children }: Props) {
   const { user, logout } = useAuth()
-  const { navigate, path } = useRouter()
-  const onStocks = path === '/stocks' || path.startsWith('/stocks/')
+  const { navigate } = useRouter()
 
   return (
-    <div className="min-h-screen bg-[var(--bg-main)]">
-      <header className="bg-[var(--header-bg)] border-b border-[var(--border-color)] px-4 py-3">
-        <div className="flex items-center justify-between gap-3">
+    <>
+      <header className="app-header">
+        <a
+          href="/stocks"
+          onClick={(e) => {
+            e.preventDefault()
+            navigate('/stocks')
+          }}
+          className="brand"
+          style={{ textDecoration: 'none', color: 'inherit' }}
+        >
+          <div className="brand-mark">i</div>
+          <span>invest</span>
+        </a>
+        <div className="header-right">
           <a
-            href="/stocks"
+            href="/profile"
             onClick={(e) => {
               e.preventDefault()
-              navigate('/stocks')
+              navigate('/profile')
             }}
-            className="text-lg font-semibold text-[var(--text-primary)] no-underline"
+            className="user-name"
+            style={{ textDecoration: 'none' }}
           >
-            invest
+            {user?.name || user?.email}
           </a>
-          <div className="flex items-center gap-4">
-            <a
-              href="/profile"
-              onClick={(e) => {
-                e.preventDefault()
-                navigate('/profile')
-              }}
-              className="text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] truncate max-w-[160px]"
-            >
-              {user?.name || user?.email}
-            </a>
-            <button
-              onClick={logout}
-              className="text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-            >
-              Logout
-            </button>
-          </div>
+          <div className="header-divider" />
+          <a
+            href="#"
+            onClick={(e) => {
+              e.preventDefault()
+              logout()
+            }}
+            className="logout-link"
+            style={{ textDecoration: 'none' }}
+          >
+            Logout
+          </a>
         </div>
-        <nav className="flex gap-1 mt-2 overflow-x-auto">
-          <a
-            href="/stocks"
-            onClick={(e) => {
-              e.preventDefault()
-              navigate('/stocks')
-            }}
-            className={`px-3 py-1.5 rounded text-sm flex items-center ${
-              onStocks
-                ? 'bg-[var(--selected-bg)] text-[var(--accent)]'
-                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-            }`}
-          >
-            Stocks
-          </a>
-        </nav>
       </header>
-      <main className="p-4 max-w-6xl mx-auto">{children}</main>
-    </div>
+      <main className="app-shell">{children}</main>
+    </>
   )
 }

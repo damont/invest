@@ -1,22 +1,34 @@
 import { useEffect, useState } from 'react'
 import { api } from '../../api/client'
 import { useRouter } from '../../hooks/useRouter'
-import type { Stock } from '../../types'
+import type { DashboardResponse, DashboardStock } from '../../types'
+import MarketBar from '../dashboard/MarketBar'
+import MoverCard from '../dashboard/MoverCard'
+import PriorityStrip from '../dashboard/PriorityStrip'
+import StockListSection from '../dashboard/StockListSection'
+import ThesisChangeCard from '../dashboard/ThesisChangeCard'
+import VideoCard from '../dashboard/VideoCard'
+import {
+  type SortId,
+  hasRecentThesisChange,
+  isBigMover,
+} from '../dashboard/format'
 import AddStockDialog from './AddStockDialog'
 
 export default function StockList() {
   const { navigate } = useRouter()
-  const [stocks, setStocks] = useState<Stock[] | null>(null)
+  const [data, setData] = useState<DashboardStock[] | null>(null)
   const [error, setError] = useState('')
   const [showAdd, setShowAdd] = useState(false)
+  const [sortId, setSortId] = useState<SortId>('movers')
 
   const load = async () => {
     setError('')
     try {
-      const data = await api.get<Stock[]>('/api/stocks')
-      setStocks(data)
+      const res = await api.get<DashboardResponse>('/api/stocks/dashboard')
+      setData(res.stocks)
     } catch {
-      setError('Failed to load stocks')
+      setError('Failed to load dashboard')
     }
   }
 
@@ -24,10 +36,63 @@ export default function StockList() {
     load()
   }, [])
 
+  if (data === null) {
+    return <p className="text-[var(--text-secondary)] text-sm">Loading…</p>
+  }
+
+  const thesisChanged = data.filter((s) => hasRecentThesisChange(s))
+  const bigMovers = data
+    .filter((s) => isBigMover(s))
+    .sort((a, b) => Math.abs(b.change_pct ?? 0) - Math.abs(a.change_pct ?? 0))
+  const newVideos = data
+    .filter((s) => !!s.latest_video)
+    .sort((a, b) => {
+      const ad = a.latest_video?.published_at ?? a.latest_video?.curated_at ?? ''
+      const bd = b.latest_video?.published_at ?? b.latest_video?.curated_at ?? ''
+      return bd.localeCompare(ad)
+    })
+
   return (
     <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <h2 className="text-xl font-semibold text-[var(--text-primary)]">Watchlist</h2>
+      {error && <p className="text-[var(--danger)] text-sm">{error}</p>}
+
+      <MarketBar items={data} />
+
+      <PriorityStrip
+        eyebrow="Action needed"
+        title="Thesis updates"
+        items={thesisChanged}
+        renderItem={(s) => <ThesisChangeCard item={s} />}
+        empty="No thesis changes recently."
+      />
+
+      <PriorityStrip
+        eyebrow="Big moves"
+        title="±5% movers"
+        items={bigMovers}
+        renderItem={(s) => <MoverCard item={s} />}
+        empty="No 5%+ moves on your watchlist today."
+      />
+
+      <PriorityStrip
+        eyebrow="New today"
+        title="YouTube videos"
+        items={newVideos}
+        renderItem={(s) => <VideoCard item={s} />}
+        empty="No new videos today."
+      />
+
+      {data.length === 0 ? (
+        <div className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-lg p-8 text-center">
+          <p className="text-sm text-[var(--text-secondary)]">
+            No stocks yet. Add your first to start tracking.
+          </p>
+        </div>
+      ) : (
+        <StockListSection items={data} sortId={sortId} onSortChange={setSortId} />
+      )}
+
+      <div className="flex justify-end">
         <button
           onClick={() => setShowAdd(true)}
           className="w-full sm:w-auto px-4 py-2 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded text-sm min-h-[44px] sm:min-h-0"
@@ -35,43 +100,6 @@ export default function StockList() {
           + Add stock
         </button>
       </div>
-
-      {error && <p className="text-[var(--danger)] text-sm">{error}</p>}
-
-      {stocks === null ? (
-        <p className="text-[var(--text-muted)] text-sm">Loading…</p>
-      ) : stocks.length === 0 ? (
-        <div className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-lg p-8 text-center">
-          <p className="text-sm text-[var(--text-secondary)]">
-            No stocks yet. Add your first to start tracking.
-          </p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {stocks.map((s) => (
-            <a
-              key={s.id}
-              href={`/stocks/${s.id}`}
-              onClick={(e) => {
-                e.preventDefault()
-                navigate(`/stocks/${s.id}`)
-              }}
-              className="block bg-[var(--bg-surface)] border border-[var(--border-color)] hover:border-[var(--accent)] rounded-lg p-4 transition-colors"
-            >
-              <div className="flex items-baseline justify-between">
-                <span className="text-lg font-semibold text-[var(--text-primary)]">
-                  {s.ticker}
-                </span>
-                {s.pinned && <span className="text-xs text-[var(--warning)]">★ pinned</span>}
-              </div>
-              <p className="text-sm text-[var(--text-secondary)] truncate">{s.name}</p>
-              {s.sector && (
-                <p className="text-xs text-[var(--text-muted)] mt-1">{s.sector}</p>
-              )}
-            </a>
-          ))}
-        </div>
-      )}
 
       {showAdd && (
         <AddStockDialog
