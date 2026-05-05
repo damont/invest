@@ -41,6 +41,14 @@ export default function AgentTokenSection() {
         'Curate a small set of high-quality YouTube videos per stock; mark older ones as long-term',
         'Maintain the related-tickers list so the user knows when a competitor or supplier reports earnings',
       ],
+      suggestions: [
+        'Build an on-demand "current status" skill: when the operator asks "how is GOOG doing?", return the latest StockSnapshot, today\'s price action vs. yesterday, and the top 3 unread news items by relevance score',
+        'Set up an hourly job that fetches fresh prices for every tracked stock, writes a StockSnapshot, and alerts the operator if any stock has moved more than ±5% on the day',
+        'Set up a daily news digest job: ingest the day\'s headlines for every tracked stock, dedupe across sources, rank by relevance, and surface the top items the operator hasn\'t marked read yet',
+        'Set up a weekly AiThesis refresh: re-generate each stock\'s AI thesis given the past week of news + price action, and only persist a new version if the take has materially changed',
+        'Watch the related-tickers list and alert the operator when a related (but not tracked) ticker has earnings or major news — that\'s often a leading indicator',
+        'Set up a quarterly review skill that summarizes how each stock\'s reality (price action, news flow, financials) has tracked against the operator\'s UserThesis, flagging any divergences worth re-examining',
+      ],
     })
     downloadSkill('invest', md)
   }

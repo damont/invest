@@ -36,16 +36,43 @@ export interface AgentSkillInput {
    * the agent's planning loop without locking it to a specific endpoint.
    */
   capabilities?: string[]
+  /**
+   * Optional list of higher-order setups the agent can proactively offer
+   * the operator — recurring jobs, on-demand skills, alerting flows, etc.
+   * Different from `capabilities` (which are individual tasks): these are
+   * standing arrangements the operator might want once and benefit from
+   * forever.
+   */
+  suggestions?: string[]
 }
 
 export function agentSkill(input: AgentSkillInput): string {
-  const { appName, baseUrl, description, dataModel, capabilities = [] } = input
+  const {
+    appName,
+    baseUrl,
+    description,
+    dataModel,
+    capabilities = [],
+    suggestions = [],
+  } = input
   const base = baseUrl.replace(/\/$/, '')
 
   const capsBlock = capabilities.length
     ? `\n## Typical tasks an operator will give you\n\n${capabilities
         .map((c) => `- ${c}`)
         .join('\n')}\n`
+    : ''
+
+  const suggestBlock = suggestions.length
+    ? `\n## Suggestions you can offer the operator
+
+If the operator hasn't told you what to do specifically, you can proactively
+offer to set up any of these. Make the offer concrete: name the cadence, the
+data that would flow, and what the operator would see as output. Don't build
+without asking — these are setups, not one-shots.
+
+${suggestions.map((s) => `- ${s}`).join('\n')}
+`
     : ''
 
   return `# ${appName} — agent setup guide
@@ -154,7 +181,7 @@ your memory of how it worked last time.
 | 409 | Conflict (usually a unique-key collision) | If your goal was idempotent insert, treat as success. |
 | 422 | Payload doesn't match the schema | Re-read the schema for that path, fix the body, retry once. |
 | 5xx | Server error | Backoff with jitter. Alert if it persists. |
-${capsBlock}
+${capsBlock}${suggestBlock}
 ## When you can't make progress
 
 If you've tried what the schema says and it still doesn't work, surface it to

@@ -50,6 +50,23 @@ describe('agentSkill template', () => {
     expect(md).not.toContain('## Typical tasks an operator will give you')
   })
 
+  it('renders the optional suggestions section when provided', () => {
+    const md = agentSkill({
+      ...sample,
+      suggestions: ['set up an hourly job', 'build a status skill'],
+    })
+    expect(md).toContain('## Suggestions you can offer the operator')
+    expect(md).toContain('- set up an hourly job')
+    expect(md).toContain('- build a status skill')
+    // Framing must be clear: these are setups to offer, not to silently build
+    expect(md).toMatch(/Don't build\s+without asking/i)
+  })
+
+  it('omits the suggestions section when none are supplied', () => {
+    const md = agentSkill({ ...sample, suggestions: undefined })
+    expect(md).not.toContain('## Suggestions you can offer the operator')
+  })
+
   it('includes the failure-modes table so agents self-correct', () => {
     const md = agentSkill(sample)
     expect(md).toContain('| 401 |')
