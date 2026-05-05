@@ -1,13 +1,19 @@
 /**
- * Generate a "bootstrap skill" markdown for an AI agent that wants to use this app's API.
+ * Generate a "setup guide" markdown that the user hands to an AI agent
+ * (Claude, Codex, openclaw, etc.) so the agent can connect to this app.
  *
  * Design notes (so this can be reused across apps):
- * - Don't list endpoints — they change; tell the agent to read /api/openapi.json instead.
- * - Don't embed the bearer token — it's a separate artifact the user hands over.
- * - Keep it short. The agent's job is to read the schema, this just orients it.
+ * - The audience is the agent at SETUP time, not at runtime. The markdown
+ *   tells it what it needs, what to ask the user for if it doesn't have it,
+ *   and how to discover endpoints.
+ * - No prescriptive tool-specific commands (curl, jq, env-var names) —
+ *   different agents store secrets differently. Stay at the contract level.
+ * - No endpoint list — endpoints change. Tell the agent to read the schema.
+ * - No embedded token. Token + this guide are separate artifacts.
  *
- * To reuse in another newbuild app: copy this file, change the four args passed in
- * by the calling component (appName / description / dataModel / capabilities).
+ * To reuse in another newbuild app: copy this file, change the four args
+ * passed in by the calling component (appName / description / dataModel /
+ * capabilities).
  */
 export interface AgentSkillInput {
   /** Lowercase app slug, used as filename and shown in the title (e.g. "invest"). */
@@ -15,19 +21,19 @@ export interface AgentSkillInput {
   /** Origin of the app, e.g. "https://invest.example.com". */
   baseUrl: string
   /**
-   * One paragraph: what the app is for, who uses it.
-   * No endpoint names — describe the *purpose*.
+   * One paragraph: what the app is for, who uses it. Describe the *purpose*
+   * — no endpoint names, no implementation detail.
    */
   description: string
   /**
-   * Short paragraph (or bullet list) describing the data model in plain English —
-   * what the resources are and how they relate. Helps the agent map the OpenAPI
-   * paths to real concepts.
+   * Short paragraph (or bullet list) describing the data model in plain
+   * English — the resources and how they relate. Helps the agent map the
+   * OpenAPI paths to real concepts later.
    */
   dataModel: string
   /**
-   * Optional list of "things this agent is typically asked to do" — feeds the
-   * agent's planning loop without locking it in to a specific endpoint name.
+   * Optional list of "things this agent is typically asked to do" — frames
+   * the agent's planning loop without locking it to a specific endpoint.
    */
   capabilities?: string[]
 }
@@ -37,10 +43,20 @@ export function agentSkill(input: AgentSkillInput): string {
   const base = baseUrl.replace(/\/$/, '')
 
   const capsBlock = capabilities.length
-    ? `\n## Typical tasks\n\n${capabilities.map((c) => `- ${c}`).join('\n')}\n`
+    ? `\n## Typical tasks an operator will give you\n\n${capabilities
+        .map((c) => `- ${c}`)
+        .join('\n')}\n`
     : ''
 
-  return `# ${appName} — agent skill
+  return `# ${appName} — agent setup guide
+
+You are an AI agent (Claude, Codex, openclaw, MCP server, custom script — doesn't
+matter which) being asked to work with **${appName}**. This document is your
+onboarding: it tells you what the app does, what you need from the operator
+before you can talk to it, and how to find the rest on your own.
+
+Read this once. If you're missing anything from "What you need" below, ask the
+operator before doing anything else. Don't guess and don't retry.
 
 ## What this app is
 
@@ -48,64 +64,111 @@ ${description}
 
 ${dataModel}
 
-## Authentication
+## What you need before you can call anything
 
-Every request needs an \`Authorization: Bearer <token>\` header. The user has issued
-you a long-lived JWT from the app's profile page; treat it as a secret, store it
-outside this file, and never log or echo it.
+Two pieces of information. Neither is encoded in this file.
 
-If you get **401**, your token is missing, malformed, or expired — stop and ask the
-user for a fresh one rather than retrying. If you get **403** with a body other than
-a generic auth error, the token is fine but the action is forbidden for this user.
+1. **The app's base URL.** Where the API actually lives. The most recent value
+   the app knew about is \`${base}\`, but the operator may have moved it
+   (Cloudflare tunnel, different host, etc.) — confirm if you're unsure.
 
-## Discovering endpoints
+2. **A bearer token (JWT).** The operator mints this themselves from the
+   profile page of the running app, under "Agent tokens". It's a long opaque
+   string scoped to that operator's user account; it lives for a configurable
+   1–365 days.
 
-**Do not guess endpoint paths.** Read the schema before calling anything new.
+Store both however your runtime handles secrets (environment variable, MCP
+config, secrets file, vault entry — your call). Never log the token, never
+echo it back, never write it to a committed file.
 
-- Machine-readable OpenAPI 3.x schema:
-  \`GET ${base}/api/openapi.json\`
-- Human-readable Swagger UI (browse this if you're unsure):
-  \`${base}/api/agent\`
+### What to ask the operator if you're missing either
 
-Workflow on a fresh task:
-1. \`GET ${base}/api/openapi.json\` once at session start, cache the result.
-2. Search the \`paths\` object for endpoints relevant to the task (by tag, path
-   keyword, or HTTP method). The schema includes request/response shapes —
-   match your payload to those exactly.
-3. If a request returns **422**, re-read the schema for that path. The error
-   body lists the failing fields; line them up with the schema and retry.
-4. The full base for every API call is \`${base}/api/...\`.
+Be specific so they know exactly what to hand back:
 
-## Idiomatic behavior
+> I need two things to start working with ${appName}: (1) the base URL where
+> it's running, and (2) a bearer token from the "Agent tokens" section of your
+> profile page on that app. Can you provide both?
 
-- **Idempotency where it exists:** prefer bulk/upsert endpoints (their docstrings
-  in the schema mark them idempotent) over many sequential single creates when
-  you're backfilling data.
-- **One user, one watchlist:** every resource is scoped to the authenticated user.
-  You cannot reach another user's data, so don't try.
-- **Don't write what the user writes:** anything labeled "user-authored" in the
-  data model description is for the human to edit in the UI; agents append to
-  versioned/AI-authored siblings instead. Inspect field names and the path's
-  description in the schema if you're unsure.
-- **Follow the rate limits implied by the cron schedule:** if you're scheduled
-  daily, don't poll hourly without a reason. If you're scheduled hourly, don't
-  burst hundreds of requests in seconds.
+If only the token is missing:
 
-## Failure modes that aren't bugs
+> I have the base URL but not a token. Please open the ${appName} profile page,
+> click "Generate" under Agent tokens, pick a duration, and paste the JWT here.
+
+## How to authenticate every request
+
+One header on every call:
+
+\`\`\`
+Authorization: Bearer <the token>
+\`\`\`
+
+That's the whole auth model. No refresh tokens, no OAuth flow, no per-endpoint
+scopes. Same token on every request until it expires.
+
+## How to discover endpoints
+
+**Don't assume endpoint paths.** The app publishes its full API surface as a
+standard OpenAPI 3.x schema. Fetch this once at the start of a session and
+work from it:
+
+- Machine-readable schema: \`<base>/api/openapi.json\`
+- Browsable Swagger UI (for the operator or for your own debugging):
+  \`<base>/api/agent\`
+
+The schema includes every endpoint's path and method, request body shape,
+response shape, tags grouping related endpoints, and per-endpoint descriptions
+that note things like idempotency or special auth behavior.
+
+To plan a task:
+
+1. Pull the schema.
+2. Search \`paths\` for endpoints relevant to the task — filter by tag, by
+   path keyword, or by method.
+3. Read the request and response schemas; match your payload exactly.
+4. Make the call with the bearer header.
+
+If something stops working, re-read the schema. It's the source of truth, not
+your memory of how it worked last time.
+
+## Idiomatic behavior the app expects
+
+- **Use idempotent endpoints when they exist.** Endpoints whose schema
+  description mentions "bulk", "upsert", or "idempotent" can safely be
+  re-run; prefer them for backfills over many single-record creates.
+- **Stay in your user.** Every resource is scoped to the authenticated user.
+  You can't reach another user's data, so don't try.
+- **Don't overwrite what the human writes.** If the data model labels
+  something as "user-authored", that's for the operator to edit in the UI.
+  Agents append to versioned/AI siblings instead. When unsure, the path's
+  description in the schema usually says.
+- **Respect your cadence.** If you've been scheduled to run daily, don't
+  poll hourly without a reason. If hourly, don't burst hundreds of calls.
+
+## Status codes that aren't bugs
 
 | Status | Meaning | What to do |
 |---|---|---|
-| 401 | Bad/missing/expired token | Stop, request a new token from the user |
-| 403 | Authenticated but action forbidden | Read the response body; do not retry |
-| 404 | Resource not found or not yours | Don't retry; the ID may be stale |
-| 409 | Conflict (usually a unique-key collision) | Treat as success-equivalent if your goal was idempotent insert |
-| 422 | Payload doesn't match schema | Re-read the schema, fix the body, retry once |
-| 5xx | Server error | Backoff and retry with jitter; alert if persistent |
+| 401 | Token missing, malformed, or expired | Stop. Ask the operator for a fresh one. Do not retry. |
+| 403 | Authenticated but the action is forbidden for this user | Read the response body. Do not retry. |
+| 404 | Resource doesn't exist or isn't yours | Don't retry; the ID is stale. |
+| 409 | Conflict (usually a unique-key collision) | If your goal was idempotent insert, treat as success. |
+| 422 | Payload doesn't match the schema | Re-read the schema for that path, fix the body, retry once. |
+| 5xx | Server error | Backoff with jitter. Alert if it persists. |
 ${capsBlock}
+## When you can't make progress
+
+If you've tried what the schema says and it still doesn't work, surface it to
+the operator with specifics: which endpoint, what payload, what status, what
+the response body said. Don't loop. The operator can:
+
+- Mint a fresh token (profile → Agent tokens → Generate).
+- Confirm or correct the base URL.
+- Check server logs you can't see.
+
 ---
 
-*This file is generated by the app at \`${base}\`. The endpoint list is
-intentionally not pinned here — read \`/api/openapi.json\` for that.*
+*This guide was generated by ${appName} at \`${base}\`. The endpoint list is
+intentionally not pinned here — fetch \`${base}/api/openapi.json\` for that.*
 `
 }
 

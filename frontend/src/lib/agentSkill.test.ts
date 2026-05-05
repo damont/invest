@@ -10,15 +10,25 @@ const sample = {
 }
 
 describe('agentSkill template', () => {
-  it('embeds the base URL on the discovery URLs and never trailing-slashes', () => {
+  it('mentions the current base URL but uses <base> placeholders for discovery', () => {
+    // Discovery paths are templated with <base> so the agent treats them as
+    // substitutable — the operator may have moved the host since the file
+    // was generated.
+    const md = agentSkill(sample)
+    expect(md).toContain('<base>/api/openapi.json')
+    expect(md).toContain('<base>/api/agent')
+    // The literal base URL only shows up as context (most-recent-known + footer),
+    // never embedded in the canonical discovery URL.
+    expect(md).toContain('https://demo.example.com')
+  })
+
+  it('strips a trailing slash from baseUrl in any literal mention', () => {
     const md = agentSkill({ ...sample, baseUrl: 'https://demo.example.com/' })
-    expect(md).toContain('GET https://demo.example.com/api/openapi.json')
-    expect(md).toContain('https://demo.example.com/api/agent')
-    expect(md).not.toContain('https://demo.example.com//api')
+    expect(md).not.toContain('https://demo.example.com//')
   })
 
   it('does not list any specific endpoint path', () => {
-    // Bootstrap rule: tell the agent to read the schema, do not pin endpoints here.
+    // Bootstrap rule: tell the agent to read the schema, never pin endpoints.
     const md = agentSkill(sample)
     expect(md).not.toMatch(/\/api\/(stocks|things|tasks|users)\b/)
   })
@@ -31,18 +41,26 @@ describe('agentSkill template', () => {
 
   it('renders the optional capabilities list when provided', () => {
     const md = agentSkill(sample)
-    expect(md).toContain('## Typical tasks')
+    expect(md).toContain('## Typical tasks an operator will give you')
     expect(md).toContain('- do a thing')
   })
 
   it('omits the capabilities section when none are supplied', () => {
     const md = agentSkill({ ...sample, capabilities: undefined })
-    expect(md).not.toContain('## Typical tasks')
+    expect(md).not.toContain('## Typical tasks an operator will give you')
   })
 
   it('includes the failure-modes table so agents self-correct', () => {
     const md = agentSkill(sample)
     expect(md).toContain('| 401 |')
     expect(md).toContain('| 422 |')
+  })
+
+  it('tells the agent what to ask the operator for', () => {
+    // The whole point of the redesigned guide: it's setup-time instructions.
+    const md = agentSkill(sample)
+    expect(md).toContain('What you need before you can call anything')
+    expect(md).toMatch(/ask the operator/i)
+    expect(md).toContain('Authorization: Bearer')
   })
 })
