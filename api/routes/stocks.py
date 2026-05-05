@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime, timezone
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pymongo import DESCENDING
@@ -11,6 +12,14 @@ from api.schemas.dto.price_point import (
     PricePointCreate,
     PricePointResponse,
 )
+from api.schemas.dto.dashboard import (
+    DashboardNews,
+    DashboardResponse,
+    DashboardSnapshot,
+    DashboardStock,
+    DashboardThesis,
+    DashboardYouTube,
+)
 from api.schemas.dto.stock import StockCreate, StockResponse, StockUpdate
 from api.schemas.dto.stock_snapshot import (
     StockSnapshotCreate,
@@ -18,6 +27,7 @@ from api.schemas.dto.stock_snapshot import (
 )
 from api.schemas.dto.thesis import (
     AiThesisCreate,
+    AiThesisRecentChangeUpdate,
     AiThesisResponse,
     ThesisResponse,
     UserThesisUpdate,
@@ -72,6 +82,8 @@ def _ai_to_response(a: AiThesis) -> AiThesisResponse:
         model=a.model,
         version=a.version,
         generated_at=a.generated_at,
+        recent_change=a.recent_change,
+        recent_change_at=a.recent_change_at,
     )
 
 
@@ -105,6 +117,141 @@ async def create_stock(data: StockCreate, user: User = Depends(get_current_user)
         raise HTTPException(status_code=409, detail="Stock already in your watchlist")
     logger.info("Stock %s created by user %s", stock.ticker, user.id)
     return _stock_to_response(stock)
+
+
+# ---------- dashboard aggregation ----------
+#
+# Registered before "/{stock_id}" so FastAPI does not match "dashboard" as a stock id.
+
+SPARK_POINTS = 24
+
+
+@router.get("/dashboard", response_model=DashboardResponse)
+async def get_dashboard(user: User = Depends(get_current_user)):
+    """One-shot aggregation for the dashboard view.
+
+    Returns each non-archived stock plus its latest snapshot, last 24 daily closes
+    (oldest -> newest), today's % change derived from those closes, latest AI thesis,
+    latest news headline, and latest unwatched YouTube link. Avoids N round-trips
+    from the frontend.
+    """
+    stocks = await (
+        Stock.find(Stock.user_id == str(user.id), Stock.archived == False)  # noqa: E712
+        .sort([("pinned", DESCENDING), ("sort_order", 1), ("ticker", 1)])
+        .to_list()
+    )
+
+    items: list[DashboardStock] = []
+    for s in stocks:
+        sid = str(s.id)
+
+        # Latest snapshot
+        snap_docs = (
+            await StockSnapshot.find(StockSnapshot.stock_id == sid)
+            .sort([("captured_at", DESCENDING)])
+            .limit(1)
+            .to_list()
+        )
+        snap = snap_docs[0] if snap_docs else None
+        snapshot = (
+            DashboardSnapshot(
+                price=snap.price,
+                market_cap=snap.market_cap,
+                pe_ratio=snap.pe_ratio,
+                avg_volume_30d=snap.avg_volume_30d,
+                captured_at=snap.captured_at,
+            )
+            if snap
+            else None
+        )
+
+        # Sparkline + today's % change from last 24 daily closes
+        recent_prices = (
+            await PricePoint.find(PricePoint.stock_id == sid)
+            .sort([("date", DESCENDING)])
+            .limit(SPARK_POINTS)
+            .to_list()
+        )
+        # recent_prices is newest -> oldest; reverse for display.
+        ordered = list(reversed(recent_prices))
+        spark = [p.close for p in ordered]
+        change_pct: Optional[float] = None
+        if len(ordered) >= 2 and ordered[-2].close:
+            prev_close = ordered[-2].close
+            change_pct = ((ordered[-1].close - prev_close) / prev_close) * 100.0
+
+        # Latest AI thesis
+        ai_docs = (
+            await AiThesis.find(AiThesis.stock_id == sid)
+            .sort([("version", DESCENDING)])
+            .limit(1)
+            .to_list()
+        )
+        thesis = (
+            DashboardThesis(
+                content_md=ai_docs[0].content_md,
+                version=ai_docs[0].version,
+                generated_at=ai_docs[0].generated_at,
+                recent_change=ai_docs[0].recent_change,
+                recent_change_at=ai_docs[0].recent_change_at,
+            )
+            if ai_docs
+            else None
+        )
+
+        # Latest news headline
+        news_docs = (
+            await NewsItem.find(NewsItem.stock_id == sid)
+            .sort([("published_at", DESCENDING), ("ingested_at", DESCENDING)])
+            .limit(1)
+            .to_list()
+        )
+        latest_news = (
+            DashboardNews(
+                headline=news_docs[0].headline,
+                url=news_docs[0].url,
+                published_at=news_docs[0].published_at,
+            )
+            if news_docs
+            else None
+        )
+
+        # Latest unwatched YouTube link
+        yt_docs = (
+            await YouTubeLink.find(
+                YouTubeLink.stock_id == sid,
+                YouTubeLink.watched == False,  # noqa: E712
+            )
+            .sort([("published_at", DESCENDING), ("curated_at", DESCENDING)])
+            .limit(1)
+            .to_list()
+        )
+        latest_video = (
+            DashboardYouTube(
+                title=yt_docs[0].title,
+                url=yt_docs[0].url,
+                channel=yt_docs[0].channel,
+                duration_seconds=yt_docs[0].duration_seconds,
+                published_at=yt_docs[0].published_at,
+                curated_at=yt_docs[0].curated_at,
+            )
+            if yt_docs
+            else None
+        )
+
+        items.append(
+            DashboardStock(
+                stock=_stock_to_response(s),
+                snapshot=snapshot,
+                spark=spark,
+                change_pct=change_pct,
+                thesis=thesis,
+                latest_news=latest_news,
+                latest_video=latest_video,
+            )
+        )
+
+    return DashboardResponse(stocks=items)
 
 
 @router.get("/{stock_id}", response_model=StockResponse)
@@ -220,18 +367,67 @@ async def create_ai_thesis(
         .limit(1)
         .to_list()
     )
-    next_version = (latest[0].version + 1) if latest else 1
+    prior = latest[0] if latest else None
+    next_version = (prior.version + 1) if prior else 1
+
+    # Carry over recent_change from the prior version unless the caller explicitly set it.
+    payload = data.model_dump(exclude_unset=True)
+    if "recent_change" in payload:
+        recent_change = data.recent_change
+        recent_change_at = (
+            datetime.now(timezone.utc) if data.recent_change is not None else None
+        )
+    elif prior is not None:
+        recent_change = prior.recent_change
+        recent_change_at = prior.recent_change_at
+    else:
+        recent_change = None
+        recent_change_at = None
 
     ai = AiThesis(
         stock_id=sid,
         content_md=data.content_md,
         model=data.model,
         version=next_version,
+        recent_change=recent_change,
+        recent_change_at=recent_change_at,
     )
     await ai.insert()
     logger.info(
         "AiThesis v%d inserted for stock %s (model=%s)", next_version, sid, data.model
     )
+    return _ai_to_response(ai)
+
+
+@router.patch(
+    "/{stock_id}/ai-thesis/recent-change",
+    response_model=AiThesisResponse,
+)
+async def update_ai_thesis_recent_change(
+    stock_id: str,
+    data: AiThesisRecentChangeUpdate,
+    user: User = Depends(get_current_user),
+):
+    """Update only the `recent_change` note on the latest AI thesis version.
+
+    Independent of the full thesis content so that regenerating the thesis without
+    a meaningful change does not erase the note. Phase 10 will swap to API-key auth.
+    """
+    stock = await _get_owned_stock(stock_id, user)
+    sid = str(stock.id)
+    latest = (
+        await AiThesis.find(AiThesis.stock_id == sid)
+        .sort([("version", DESCENDING)])
+        .limit(1)
+        .to_list()
+    )
+    if not latest:
+        raise HTTPException(status_code=404, detail="No AI thesis exists for this stock yet")
+    ai = latest[0]
+    ai.recent_change = data.recent_change
+    ai.recent_change_at = datetime.now(timezone.utc) if data.recent_change is not None else None
+    await ai.save()
+    logger.info("AiThesis recent_change updated for stock %s (v%d)", sid, ai.version)
     return _ai_to_response(ai)
 
 
